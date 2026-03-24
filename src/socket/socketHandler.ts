@@ -42,9 +42,9 @@ export const initSocket = (io: Server): void => {
    
     // ONLINE USERS
     if (!onlineUsers.has(userId)) {
-      onlineUsers.set(userId, new Set());
+      onlineUsers.set(userId, new Set()); //new user create empty set {}
     }
-    onlineUsers.get(userId)!.add(socket.id);
+    onlineUsers.get(userId)!.add(socket.id); //adding socketid (which device) to empty string === "user1" → { "socket123" }
 
     await User.findByIdAndUpdate(userId, {
       isOnline: true,
