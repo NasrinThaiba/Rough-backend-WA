@@ -3,14 +3,10 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { AuthRequest, JwtPayload } from '../types';
 
-export const protect = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export const protect = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     let token: string | undefined;
-
+    
     if (
       req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
       token = req.headers.authorization.split(' ')[1];

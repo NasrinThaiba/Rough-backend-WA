@@ -41,7 +41,6 @@ export const getMessages = async (req: AuthRequest, res: Response): Promise<void
 };
 
 
-
 export const sendMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { conversationId, text, replyTo } = req.body;
@@ -52,7 +51,6 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
     }
 
     const conversation = await Conversation.findOne({ _id: conversationId, participants: req.user!._id });
-
     if (!conversation) {
       res.status(403).json({ success: false, message: 'Access denied.' });
       return;
@@ -119,7 +117,7 @@ export const deleteMessage = async (req: AuthRequest, res: Response): Promise<vo
 //     if (!message) {
 //       res.status(404).json({ success: false, message: 'Message not found.' });
 //       return;
-//     }
+//     }a
 
 //     const existingReaction = message.reactions.findIndex(
 //       (r) => r.userId.toString() === req.user!._id.toString()

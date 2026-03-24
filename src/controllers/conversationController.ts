@@ -1,9 +1,10 @@
 import { Response } from "express"
 import {Conversation} from "../models/Conversation"
 import { AuthRequest } from "../types"
+import { Types } from "mongoose"
 
 
-export const getCoversations = async (req : AuthRequest, res : Response) : Promise<void> => {
+export const getConversations = async (req : AuthRequest, res : Response) : Promise<void> => {
    try {
     const userId = req.user!._id;
 
@@ -19,7 +20,7 @@ export const getCoversations = async (req : AuthRequest, res : Response) : Promi
   }
 }
 
-export const CreateorGetConversation = async (req : AuthRequest, res : Response) : Promise<void> => {
+export const createorGetConversation = async (req : AuthRequest, res : Response) : Promise<void> => {
     try {
         const {participantId} = req.body;
         const userId = req.user!._id;
@@ -44,7 +45,7 @@ export const CreateorGetConversation = async (req : AuthRequest, res : Response)
             })
         }
 
-        const populatedConversation = await Conversation.populate("participants", "name avatar isOnline");
+        const populatedConversation = await conversation.populate("participants", "name avatar isOnline");
         res.json({success : true, conversation : populatedConversation})
 
     } catch (error) {
