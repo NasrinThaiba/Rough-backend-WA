@@ -17,15 +17,12 @@ export const register = async (req : Request, res:Response) : Promise<void> => {
             return;
         }
 
-        const existingUser = await User.findOne({phone});
-        if(existingUser) {
-            res.status(400).json({ success: false, message : "phone number already exists" })
-            return;
-        }
+        const existingUser = await User.findOne({$or: [{ phone }, { email }]});
+        if (existingUser) {res.status(400).json({success: false, message: "User already exists with this phone or email"});
+        return;
+      }
 
-        const user = await User.create({
-            name, phone, email, password, avatar : ``
-        })
+        const user = await User.create({ name, phone, email, password, avatar : ``})
 
         const token = signToken(user._id.toString(), user.phone);
 
@@ -38,7 +35,7 @@ export const register = async (req : Request, res:Response) : Promise<void> => {
             status : user.status,
             isOnline : user.isOnline,
         },
-    })
+      })
     } catch (error) {
         console.log('Register error :', error);
         res.status(500).json({success :  false, message : "Server error during registration!"})
@@ -93,6 +90,7 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
     const user = req.user!;
     res.status(200).json({ success: true, user });
   } catch (error) {
+    console.error('getme error:', error);
     res.status(500).json({ success: false, message: 'Server error.' });
   }
 };
@@ -107,6 +105,7 @@ export const logout = async (req: AuthRequest, res: Response): Promise<void> => 
     res.status(200).json({ success: true, message: 'Logged out successfully.' });
     
   } catch (error) {
+    console.error('logout error:', error);
     res.status(500).json({ success: false, message: 'Server error.' });
   }
 };

@@ -23,8 +23,6 @@ export interface IMessage extends Document {
   conversation: Types.ObjectId;
   sender: Types.ObjectId;
   text?: string;
-//   mediaUrl?: string;
-//   mediaType?: 'image' | 'video' | 'audio' | 'document';
   status: 'sent' | 'delivered' | 'read';
   reactions: Array<{ userId: Types.ObjectId; emoji: string }>;
   replyTo?: Types.ObjectId;
@@ -63,8 +61,6 @@ export interface SocketUser {
 export interface SendMessagePayload {
   conversationId: string;
   text?: string;
-//   mediaUrl?: string;
-//   mediaType?: string;
   replyTo?: string;
 }
 

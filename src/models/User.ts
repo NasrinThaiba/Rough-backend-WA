@@ -25,65 +25,51 @@ const UserSchema = new Schema<IUser>(
       minlength: [6, 'Password must be at least 6 characters'],
       select: false,
     },
-    avatar: {
-      type: String,
-      default: '',
-    },
+    avatar: { type: String, default: '' },
+
     status: {
       type: String,
       default: 'Hey there! I am using WhatsApp.',
       maxlength: [139, 'Status cannot exceed 139 characters'],
     },
+
     phone: {
       type: String,
       required: [true, 'Phone Number is required'],
       unique: true,
-      match: [/^\d{10}$/, 'Phone number must be exactly 10 digits']
+      match: [/^\d{10}$/, 'Phone number must be exactly 10 digits'],
     },
-    isOnline: {
-      type: Boolean,
-      default: false,
-    },
-    lastSeen: {
-      type: Date,
-      default: Date.now,
-    },
-    contacts: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: 'User',
-      },
-    ],
-    blockedUsers: [
-      { 
-        type: Schema.Types.ObjectId, 
-        ref: 'User' 
-      },
-    ],
+
+    isOnline: { type: Boolean, default: false },
+    lastSeen: { type: Date, default: Date.now },
+
+    contacts: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Hash password before saving
-UserSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next(); //not new password, no need to hash
+
+// ✅ FIXED middleware (NO next)
+UserSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
+
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
-  next();
 });
 
-// Compare password method
-UserSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
+
+// ✅ Compare password
+UserSchema.methods.comparePassword = async function (candidatePassword: string) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Remove password from JSON output
+
+// ✅ Remove password
 UserSchema.methods.toJSON = function () {
-  const data = this.toObject(); //converted json to object
-  delete data.password;
-  return data;
+  const obj = this.toObject();
+  delete obj.password;
+  return obj;
 };
 
 export const User = model<IUser>('User', UserSchema);

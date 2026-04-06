@@ -37,40 +37,38 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// ✅ Routes
+//  Routes
 app.use('/api', routes);
 
-// ✅ Health check
+// Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ✅ 404 handler
+// 404 handler
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });
 });
 
-// ✅ Initialize socket
+// Initialize socket
 initSocket(io);
 
-// ✅ Env configs
-const PORT = process.env.PORT ?? 5000;
-const MONGODB_URI =
-  process.env.MONGODB_URI ?? 'mongodb://localhost:27017/whatsapp_clone';
 
-// ✅ MongoDB connection
+const PORT = process.env.PORT ?? 5000;
+const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/whatsapp_clone';
+
+// MongoDB connection
 mongoose
   .connect(MONGODB_URI)
-  .then(() => {
-    console.log('✅ MongoDB connected');
+  .then(() => {console.log('✅ MongoDB connected');
 
     httpServer.listen(PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
-      console.log(`🔌 Socket.io ready`);
+      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Socket.io ready`);
     });
   })
   .catch((err) => {
-    console.error('❌ MongoDB connection failed:', err.message);
+    console.error('MongoDB connection failed:', err.message);
     process.exit(1);
   });
 

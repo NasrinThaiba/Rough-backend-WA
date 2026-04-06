@@ -2,8 +2,9 @@ import { Response } from 'express';
 import { Message } from '../models/Message';
 import { Conversation } from '../models/Conversation';
 import { AuthRequest } from '../types';
+import { User } from '../models/User';
 
-// ==================== GET MESSAGES ====================
+//  GET MESSAGES 
 export const getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { conversationId } = req.params;
@@ -11,11 +12,7 @@ export const getMessages = async (req: AuthRequest, res: Response): Promise<void
     const limit = parseInt(req.query.limit as string) || 50;
     const skip = (page - 1) * limit;
 
-    // ✅ Check user access
-    const conversation = await Conversation.findOne({
-      _id: conversationId,
-      participants: req.user!._id,
-    });
+    const conversation = await Conversation.findOne({ _id: conversationId, participants: req.user!._id });
 
     if (!conversation) {
       res.status(403).json({ success: false, message: 'Access denied.' });
@@ -35,43 +32,66 @@ export const getMessages = async (req: AuthRequest, res: Response): Promise<void
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
 
-  } catch {
+  } catch(error) {
+    console.error('getMessages error:', error);
     res.status(500).json({ success: false, message: 'Server error.' });
   }
 };
 
-
 export const sendMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { conversationId, text, replyTo } = req.body;
+    const senderId = req.user!._id;
 
     if (!conversationId || !text) {
       res.status(400).json({ success: false, message: 'Text message required.' });
       return;
     }
 
-    const conversation = await Conversation.findOne({ _id: conversationId, participants: req.user!._id });
+    const conversation = await Conversation.findOne({_id: conversationId, participants: senderId});
     if (!conversation) {
       res.status(403).json({ success: false, message: 'Access denied.' });
       return;
     }
 
+    const receiverId = conversation.participants.find(
+      (id: any) => id.toString() !== senderId.toString()
+    );
+    const receiver = await User.findById(receiverId);
+
+    if (!receiver) {
+      res.status(404).json({ success: false, message: 'Receiver not found' });
+      return;
+    }
+
+    if (receiver.blockedUsers.includes(senderId)) {
+      res.status(403).json({ success: false, message: "You are blocked by this user"});
+      return;
+    }
+
+   //create message
     const message = await Message.create({
       conversation: conversationId,
-      sender: req.user!._id,
+      sender: senderId,
       text,
-      replyTo,
+      status : 'sent',
     });
 
+    //Update conversation
     await Conversation.findByIdAndUpdate(conversationId, {
       lastMessage: message._id,
       updatedAt: new Date(),
     });
 
     const populated = await message.populate('sender', 'name avatar');
-    res.status(201).json({ success: true, message: populated });
 
-  } catch {
+    res.status(201).json({
+      success: true,
+      message: populated,
+    });
+
+  } catch (error) {
+    console.error('sendMessage error:', error);
     res.status(500).json({ success: false, message: 'Server error.' });
   }
 };
@@ -101,38 +121,10 @@ export const deleteMessage = async (req: AuthRequest, res: Response): Promise<vo
 
     res.status(200).json({ success: true, message: 'Message deleted.' });
 
-  } catch {
+  } catch(error){
+    console.error('deletemsg error:', error);
     res.status(500).json({ success: false, message: 'Server error.' });
   }
 };
 
 
-// ==================== REACT TO MESSAGE ====================
-// export const reactToMessage = async (req: AuthRequest, res: Response): Promise<void> => {
-//   try {
-//     const { messageId } = req.params;
-//     const { emoji } = req.body;
-
-//     const message = await Message.findById(messageId);
-//     if (!message) {
-//       res.status(404).json({ success: false, message: 'Message not found.' });
-//       return;
-//     }a
-
-//     const existingReaction = message.reactions.findIndex(
-//       (r) => r.userId.toString() === req.user!._id.toString()
-//     );
-
-//     if (existingReaction > -1) {
-//       message.reactions.splice(existingReaction, 1);
-//     } else {
-//       message.reactions.push({ userId: req.user!._id, emoji });
-//     }
-
-//     await message.save();
-
-//     res.status(200).json({ success: true, reactions: message.reactions });
-//   } catch {
-//     res.status(500).json({ success: false, message: 'Server error.' });
-//   }
-// };

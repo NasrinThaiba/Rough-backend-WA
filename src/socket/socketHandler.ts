@@ -16,6 +16,7 @@ interface CustomSocket extends Socket {
 
 export const initSocket = (io: Server): void => {
 
+  // AUTH
   io.use(async (socket: CustomSocket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -28,7 +29,9 @@ export const initSocket = (io: Server): void => {
 
       socket.user = user;
       next();
-    } catch (err) {
+
+    } catch (error) {
+      console.error('initSocket error:', error);
       next(new Error('Invalid token'));
     }
   });
@@ -40,11 +43,10 @@ export const initSocket = (io: Server): void => {
     console.log(`Connected: ${user.name}`);
 
    
-    // ONLINE USERS
     if (!onlineUsers.has(userId)) {
-      onlineUsers.set(userId, new Set()); //new user create empty set {}
+      onlineUsers.set(userId, new Set());
     }
-    onlineUsers.get(userId)!.add(socket.id); //adding socketid (which device) to empty string === "user1" → { "socket123" }
+    onlineUsers.get(userId)!.add(socket.id);
 
     await User.findByIdAndUpdate(userId, {
       isOnline: true,
@@ -53,50 +55,80 @@ export const initSocket = (io: Server): void => {
 
     socket.join(userId);
 
-    const contacts = await User.findById(userId).select('contacts'); // id
-    const contactIds = contacts?.contacts.map((c) => c.toString()) ?? []; //convert to string
+  
 
-    contactIds.forEach((id) => {
-      io.to(id).emit('user:online', { userId, isOnline: true });
+    const userConversations = await Conversation.find({
+      participants: userId,
+    }).distinct('_id');
+
+    const undeliveredMessages = await Message.find({
+      conversation: { $in: userConversations },
+      sender: { $ne: userId },
+      status: 'sent',
+    }).select('_id sender');
+
+    await Message.updateMany(
+      {
+        conversation: { $in: userConversations },
+        sender: { $ne: userId },
+        status: 'sent',
+      },
+      { status: 'delivered' }
+    );
+
+    undeliveredMessages.forEach((msg) => {
+      io.to(msg.sender.toString()).emit('message:status:update', {
+        messageId: msg._id,
+        status: 'delivered',
+      });
     });
 
-    socket.emit('users:online', getOnlineUserIds()); //newly loggin user
+    const contacts = await User.findById(userId).select('contacts');
+    const contactIds = contacts?.contacts.map((c) => c.toString()) ?? [];
 
-   
-    // JOIN / LEAVE CONVERSATION
+
+    contactIds.forEach((id) => {
+      io.to(id).emit('user:online', {userId, isOnline: true });
+    });
+
+    socket.emit('users:online', getOnlineUserIds());
+
+    
     socket.on('conversation:join', (conversationId: string) => {
       socket.join(`conv:${conversationId}`);
-      //frontend emit(enter into conversation room) backend receives it and join in room 
     });
 
     socket.on('conversation:leave', (conversationId: string) => {
       socket.leave(`conv:${conversationId}`);
     });
 
-   
-    // SEND MESSAGE
+  
     socket.on('message:send', async (payload: SendMessagePayload) => {
       try {
-        if (!payload.conversationId) {
-          return socket.emit('error', { message: 'Invalid payload' });
-        }
-
         const { conversationId, text, replyTo } = payload;
 
-        const conversation = await Conversation.findOne({
-          _id: conversationId,
-          participants: userId,
-        });
+        const conversation = await Conversation.findOne({_id: conversationId,participants: userId});
 
         if (!conversation) {
           return socket.emit('error', { message: 'Conversation not found' });
+        }
+
+        const receiverId = conversation.participants.find(
+          (id: any) => id.toString() !== userId
+        )?.toString();
+
+        let isReceiverOnline = false;
+
+        if (receiverId) {
+          const receiverSockets = onlineUsers.get(receiverId);
+          isReceiverOnline = receiverSockets ? receiverSockets.size > 0 : false;
         }
 
         const message = await Message.create({
           conversation: conversationId,
           sender: userId,
           text,
-          replyTo,
+          status: isReceiverOnline ? 'delivered' : 'sent',
         });
 
         await Conversation.findByIdAndUpdate(conversationId, {
@@ -108,135 +140,58 @@ export const initSocket = (io: Server): void => {
 
         io.to(`conv:${conversationId}`).emit('message:new', populated);
 
-      } catch (err) {
-        console.error('message:send error:', err);
+        if (isReceiverOnline) {
+          io.to(userId).emit('message:status:update', {
+            messageId: message._id,
+            status: 'delivered',
+          });
+        }
+
+      } catch (error) {
+        console.error('message:send error:', error);
       }
     });
 
-    // ─────────────────────────────
-    // SEND FILE
-    // ─────────────────────────────
-    // socket.on('message:send_file', async (payload) => {
-    //   try {
-    //     const { conversationId, fileData, mimeType, filename, mediaType } = payload;
-
-    //     if (!conversationId || !fileData) return;
-
-    //     const dataUrl = `data:${mimeType};base64,${fileData}`;
-
-    //     const message = await Message.create({
-    //       conversation: conversationId,
-    //       sender: userId,
-    //       text: filename,
-    //       mediaUrl: dataUrl,
-    //       mediaType,
-    //     });
-
-    //     await Conversation.findByIdAndUpdate(conversationId, {
-    //       lastMessage: message._id,
-    //       updatedAt: new Date(),
-    //     });
-
-    //     const populated = await message.populate('sender', 'name avatar');
-
-    //     io.to(`conv:${conversationId}`).emit('message:new', populated);
-
-    //   } catch (err) {
-    //     console.error('file error:', err);
-    //   }
-    // });
-
-    // // ─────────────────────────────
-    // // SEND VOICE
-    // // ─────────────────────────────
-    // socket.on('message:send_voice', async (payload) => {
-    //   try {
-    //     const { conversationId, audioData, mimeType, duration } = payload;
-
-    //     if (!conversationId || !audioData) return;
-
-    //     const dataUrl = `data:${mimeType};base64,${audioData}`;
-
-    //     const message = await Message.create({
-    //       conversation: conversationId,
-    //       sender: userId,
-    //       text: `🎤 Voice (${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')})`,
-    //       mediaUrl: dataUrl,
-    //       mediaType: 'audio',
-    //     });
-
-    //     await Conversation.findByIdAndUpdate(conversationId, {
-    //       lastMessage: message._id,
-    //       updatedAt: new Date(),
-    //     });
-
-    //     const populated = await message.populate('sender', 'name avatar');
-
-    //     io.to(`conv:${conversationId}`).emit('message:new', populated);
-
-    //   } catch (err) {
-    //     console.error('voice error:', err);
-    //   }
-    // });
-
-    // ─────────────────────────────
-    // TYPING
-    // ─────────────────────────────
     socket.on('typing:start', (payload: TypingPayload) => {
       socket.to(`conv:${payload.conversationId}`).emit('typing:start', {
         userId,
         userName: user.name,
+        conversationId: payload.conversationId,
       });
     });
 
     socket.on('typing:stop', (payload: TypingPayload) => {
       socket.to(`conv:${payload.conversationId}`).emit('typing:stop', {
         userId,
+        conversationId: payload.conversationId,
       });
     });
 
-    // ─────────────────────────────
-    // READ RECEIPTS
-    // ─────────────────────────────
     socket.on('message:read', async ({ conversationId }) => {
       try {
-        await Message.updateMany(
-          { conversation: conversationId, sender: { $ne: userId } },
-          { status: 'read' }
-        );
+        const messages = await Message.find({
+        conversation: conversationId,
+        sender: { $ne: userId },
+        }).select('_id');
 
-        io.to(`conv:${conversationId}`).emit('message:read', {
-          readBy: userId,
+      await Message.updateMany(
+        { conversation: conversationId, sender: { $ne: userId } },
+        { status: 'read' }
+      );
+
+      messages.forEach((msg) => {
+        io.to(`conv:${conversationId}`).emit('message:status:update', {
+        messageId: msg._id,
+        status: 'read',
         });
+      });
 
-      } catch (err) {
-        console.error('read error:', err);
-      }
-    });
+     } catch (err) {
+    console.error('read error:', err);
+    }
+  });
 
-    // ─────────────────────────────
-    // REACTIONS
-    // ─────────────────────────────
-    socket.on('message:react', async ({ messageId, emoji, conversationId }) => {
-      try {
-        await Message.findByIdAndUpdate(messageId, {
-          $push: { reactions: { userId, emoji } },
-        });
-
-        socket.to(`conv:${conversationId}`).emit('message:reacted', {
-          messageId,
-          emoji,
-          userId,
-        });
-
-      } catch (err) {
-        console.error('reaction error:', err);
-      }
-    });
-
-    // ─────────────────────────────
-    // DELETE MESSAGE
-    // ─────────────────────────────
+  
     socket.on('message:delete', async ({ messageId, conversationId }) => {
       try {
         await Message.findByIdAndDelete(messageId);
@@ -248,32 +203,7 @@ export const initSocket = (io: Server): void => {
       }
     });
 
-    // ─────────────────────────────
-    // CALL EVENTS (WebRTC signaling)
-    // ─────────────────────────────
-    // socket.on('call:offer', ({ to, offer, fromName }) => {
-    //   io.to(to).emit('call:incoming', {
-    //     from: userId,
-    //     fromName,
-    //     offer,
-    //   });
-    // });
-
-    // socket.on('call:answer', ({ to, answer }) => {
-    //   io.to(to).emit('call:answered', { answer });
-    // });
-
-    // socket.on('call:ice_candidate', ({ to, candidate }) => {
-    //   io.to(to).emit('call:ice_candidate', { candidate });
-    // });
-
-    // socket.on('call:end', ({ to }) => {
-    //   io.to(to).emit('call:ended');
-    // });
-
-    // ─────────────────────────────
-    // DISCONNECT
-    // ─────────────────────────────
+  
     socket.on('disconnect', async () => {
       const sockets = onlineUsers.get(userId);
 
@@ -287,10 +217,21 @@ export const initSocket = (io: Server): void => {
             isOnline: false,
             lastSeen: new Date(),
           });
+
+          // 🔥 Notify contacts user is offline
+          const contacts = await User.findById(userId).select('contacts');
+          const contactIds = contacts?.contacts.map((c) => c.toString()) ?? [];
+
+          contactIds.forEach((id) => {
+            io.to(id).emit('user:online', {
+              userId,
+              isOnline: false,
+            });
+          });
         }
       }
 
-      console.log(`🔴 Disconnected: ${user.name}`);
+      console.log(`Disconnected: ${user.name}`);
     });
 
   });
